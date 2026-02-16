@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lesson Schedule</title>
+    <style>
+        :root {
+            --bg: #0f0f0f;
+            --card: #1a1a1a;
+            --text: #e0e0e0;
+            --accent: #bb86fc;
+            --danger: #cf6679;
+            --success: #03dac6;
+            --warning: #ff5252;
+            --secondary: #333;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background-color: var(--bg); color: var(--text);
+            margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center;
+        }
+
+        #alert-box {
+            position: fixed; top: 20px; right: 20px;
+            background: var(--warning); color: white;
+            padding: 20px; border-radius: 12px; font-weight: bold;
+            display: none; z-index: 1000; box-shadow: 0 10px 30px rgba(0,0,0,0.7);
+            border: 2px solid white; max-width: 300px;
+        }
+        #alert-box.clickable { cursor: pointer; }
+
+        .container { width: 100%; max-width: 1200px; }
+
+        .manager-section {
+            background: var(--card); padding: 20px; border-radius: 12px;
+            border: 1px solid var(--secondary); margin-bottom: 30px;
+        }
+
+        .controls { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; align-items: center; }
+
+        button {
+            padding: 10px 15px; border: none; border-radius: 6px;
+            cursor: pointer; background: var(--accent); color: #000; font-weight: bold;
+        }
+        button.secondary { background: var(--secondary); color: white; }
+        button.danger { background: var(--danger); color: white; }
+
+        input, select, textarea { background: #222; border: 1px solid #444; color: white; padding: 8px; border-radius: 4px; }
+
+        .week-container { border: 2px solid var(--secondary); border-radius: 12px; padding: 20px; margin-bottom: 40px; }
+        .week-container.active-week { border-color: var(--success); background: #131a18; }
+
+        .days-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px; }
+        .day-card { background: var(--card); padding: 15px; border-radius: 8px; border: 1px solid var(--secondary); }
+
+        .lesson-item {
+            background: #2d2d2d; padding: 12px; border-radius: 8px; margin-top: 10px;
+            font-size: 0.9em; border-left: 4px solid var(--accent); position: relative;
+        }
+        .lesson-item.upcoming { background: #441a1a; border-left-color: var(--warning); animation: pulse 2s infinite; }
+        
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0px rgba(255, 82, 82, 0.4); }
+            70% { box-shadow: 0 0 0 10px rgba(255, 82, 82, 0); }
+            100% { box-shadow: 0 0 0 0px rgba(255, 82, 82, 0); }
+        }
+
+        .utility-links { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 5px; }
+        .utility-links a { font-size: 0.75em; background: #444; color: #ddd; padding: 2px 6px; border-radius: 4px; text-decoration: none; }
+
+        .remove-btn { position: absolute; top: 5px; right: 8px; color: #888; cursor: pointer; }
+        .input-group { display: flex; flex-direction: column; gap: 8px; margin-top: 15px; padding-top: 15px; border-top: 1px solid #444; }
+        .location-tag { font-size: 0.85em; color: var(--accent); font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div id="alert-box"></div>
+
+<div class="container">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h1 id="title-main">🗓️ Lesson Schedule</h1>
+        <button onclick="toggleLang()" class="secondary" id="lang-btn">🇺🇦 UA / 🇺🇸 EN</button>
+    </div>
+
+    <section class="manager-section">
+        <h3 id="t-manager-title">🛠️ Lesson Templates</h3>
+        <div class="input-group" style="flex-direction: row; flex-wrap: wrap; border: none;">
+            <input type="text" id="t-name" placeholder="Subject">
+            <input type="text" id="t-teacher" placeholder="Teacher">
+            <input type="url" id="t-main" placeholder="Main Link">
+            <input type="text" id="t-extra" placeholder="Extra Links (comma separated)">
+            <button onclick="addTemplate()" id="save-t-btn">Save Template</button>
+        </div>
+        <div id="template-list" style="display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap;"></div>
+    </section>
+
+    <div class="controls">
+        <button onclick="addWeek()" id="add-week-btn">+ Add Week</button>
+        <button class="secondary" onclick="exportData()" id="export-btn">📋 Export</button>
+        <div style="flex-grow: 1;">
+            <input type="text" id="import-box" placeholder="Paste data here..." style="width: 60%;">
+            <button class="secondary" onclick="importData()" id="import-btn">📥 Import</button>
+        </div>
+    </div>
+
+    <div id="weeks-display"></div>
+</div>
+
+<script>
+    const i18n = {
+        en: {
+            title: "🗓️ Lesson Schedule",
+            t_title: "🛠️ Lesson Templates",
+            subject: "Subject", teacher: "Teacher", main_l: "Main Link", extra_l: "Extra Links (comma)",
+            save_t: "Save Template", add_w: "+ Add New Week", export: "Copy Export Code", import: "Import",
+            set_curr: "Set as Current", del_w: "Delete Week", add_to_day: "+ Add to Day",
+            sel_sub: "-- Select Subject --", click_join: "CLICK TO JOIN", soon: "SOON:",
+            location: "Location (e.g. Room 101)", loc_label: "Loc:",
+            days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        },
+        ua: {
+            title: "🗓️ Розклад занять",
+            t_title: "🛠️ Шаблони занять",
+            subject: "Предмет", teacher: "Викладач", main_l: "Основне посилання", extra_l: "Додаткові посилання (через кому)",
+            save_t: "Зберегти шаблон", add_w: "+ Додати тиждень", export: "Копіювати код", import: "Імпорт",
+            set_curr: "Зробити поточним", del_w: "Видалити тиждень", add_to_day: "+ Додати в день",
+            sel_sub: "-- Оберіть предмет --", click_join: "НАТИСНІТЬ, ЩОБ ПРИЄДНАТИСЯ", soon: "СКОРО:",
+            location: "Місце (напр. Ауд. 101)", loc_label: "Місце:",
+            days: ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"]
+        }
+    };
+
+    let data = JSON.parse(localStorage.getItem('lessonScheduleV6')) || {
+        templates: [],
+        weeks: [],
+        currentWeekIndex: 0,
+        cycleStartDate: Date.now(),
+        lang: 'en'
+    };
+
+    function t(key) { return i18n[data.lang][key]; }
+
+    function toggleLang() {
+        data.lang = data.lang === 'en' ? 'ua' : 'en';
+        save();
+    }
+
+    function save() {
+        localStorage.setItem('lessonScheduleV6', JSON.stringify(data));
+        render();
+    }
+
+    // Rollover Logic
+    function getAdjustedWeekIndex() {
+        if (data.weeks.length === 0) return 0;
+        const msInWeek = 604800000;
+        const weeksElapsed = Math.floor((Date.now() - data.cycleStartDate) / msInWeek);
+        return (data.currentWeekIndex + weeksElapsed) % data.weeks.length;
+    }
+
+    function setWeekAsCurrent(idx) {
+        data.currentWeekIndex = idx;
+        data.cycleStartDate = Date.now();
+        save();
+    }
+
+    function addTemplate() {
+        const name = document.getElementById('t-name').value;
+        const teacher = document.getElementById('t-teacher').value;
+        const main = document.getElementById('t-main').value;
+        const extraRaw = document.getElementById('t-extra').value;
+        if(!name || !teacher) return;
+        const extra = extraRaw.split(',').map(s => s.trim()).filter(s => s !== "");
+        data.templates.push({ id: Date.now(), name, teacher, main, extra });
+        save();
+    }
+
+    function removeTemplate(id) {
+        data.templates = data.templates.filter(t => t.id !== id);
+        save();
+    }
+
+    function addWeek() {
+        data.weeks.push(i18n.en.days.map((d, i) => ({ dayNameEn: d, dayNameUa: i18n.ua.days[i], lessons: [] })));
+        save();
+    }
+
+    function addScheduledLesson(wIdx, dIdx, btn) {
+        const group = btn.closest('.input-group');
+        const templateId = parseInt(group.querySelector('.t-select').value);
+        const start = group.querySelector('.t-start').value;
+        const end = group.querySelector('.t-end').value;
+        const location = group.querySelector('.t-location').value;
+        if(!templateId || !start) return;
+        data.weeks[wIdx][dIdx].lessons.push({ id: Date.now(), templateId, start, end, location });
+        save();
+    }
+
+    function removeLesson(wIdx, dIdx, lId, e) {
+        e.stopPropagation();
+        data.weeks[wIdx][dIdx].lessons = data.weeks[wIdx][dIdx].lessons.filter(l => l.id !== lId);
+        save();
+    }
+
+    function checkAlerts() {
+        const now = new Date();
+        const curMin = now.getHours() * 60 + now.getMinutes();
+        const alertBox = document.getElementById('alert-box');
+        const activeIdx = getAdjustedWeekIndex();
+        const week = data.weeks[activeIdx];
+        if(!week) return;
+
+        let dayIdx = now.getDay() - 1; if(dayIdx === -1) dayIdx = 6;
+        const todaysLessons = week[dayIdx].lessons;
+        let upcoming = null;
+
+        document.querySelectorAll('.lesson-item').forEach(el => el.classList.remove('upcoming'));
+
+        todaysLessons.forEach(sl => {
+            const [h, m] = sl.start.split(':').map(Number);
+            const diff = (h * 60 + m) - curMin;
+            if(diff > 0 && diff <= 30) {
+                const temp = data.templates.find(t => t.id === sl.templateId);
+                if(temp) {
+                    upcoming = { ...sl, ...temp };
+                    const el = document.getElementById(`l-${sl.id}`);
+                    if(el) {
+                        el.classList.add('upcoming');
+                        if(temp.main) el.onclick = () => window.open(temp.main, '_blank');
+                    }
+                }
+            }
+        });
+
+        if(upcoming) {
+            alertBox.innerHTML = `
+                <div style='font-size:0.7em'>${t('click_join')}</div>
+                <div>${t('soon')} ${upcoming.name}</div>
+                <div style='font-size:0.8em; font-weight:normal;'>${upcoming.start} | ${upcoming.location || '---'}</div>
+                <div style='font-size:0.8em; font-weight:normal;'>${upcoming.teacher}</div>
+            `;
+            alertBox.style.display = 'block';
+            if(upcoming.main) { alertBox.className = 'clickable'; alertBox.onclick = () => window.open(upcoming.main, '_blank'); }
+        } else { alertBox.style.display = 'none'; }
+    }
+
+    function exportData() { navigator.clipboard.writeText(JSON.stringify(data)); alert("Copied!"); }
+    function importData() { try { const imp = JSON.parse(document.getElementById('import-box').value); if(imp.weeks) { data = imp; save(); } } catch(e) {} }
+
+    function render() {
+        const lang = data.lang;
+        document.getElementById('title-main').innerText = t('title');
+        document.getElementById('t-manager-title').innerText = t('t_title');
+        document.getElementById('t-name').placeholder = t('subject');
+        document.getElementById('t-teacher').placeholder = t('teacher');
+        document.getElementById('t-main').placeholder = t('main_l');
+        document.getElementById('t-extra').placeholder = t('extra_l');
+        document.getElementById('save-t-btn').innerText = t('save_t');
+        document.getElementById('add-week-btn').innerText = t('add_w');
+        document.getElementById('export-btn').innerText = t('export');
+        document.getElementById('import-btn').innerText = t('import');
+
+        document.getElementById('template-list').innerHTML = data.templates.map(tmp => `
+            <div style="background:#252525; padding:8px 12px; border-radius:20px; border:1px solid #444; position:relative;">
+                <span style="font-size:0.9em"><b>${tmp.name}</b> (${tmp.teacher})</span>
+                <span class="remove-btn" style="position:static; margin-left:10px;" onclick="removeTemplate(${tmp.id})">&times;</span>
+            </div>
+        `).join('');
+
+        const activeIdx = getAdjustedWeekIndex();
+        document.getElementById('weeks-display').innerHTML = data.weeks.map((week, wIdx) => {
+            const isActive = activeIdx === wIdx;
+            return `
+            <div class="week-container ${isActive ? 'active-week' : ''}">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                    <h2 style="margin:0">Week ${wIdx + 1} ${isActive ? '🟢' : ''}</h2>
+                    <div>
+                        <button class="secondary" onclick="setWeekAsCurrent(${wIdx})">${t('set_curr')}</button>
+                        <button class="danger" onclick="data.weeks.splice(${wIdx},1); save();">${t('del_w')}</button>
+                    </div>
+                </div>
+                <div class="days-grid">${week.map((day, dIdx) => `
+                    <div class="day-card">
+                        <h3 style="margin-top:0">${lang === 'en' ? day.dayNameEn : day.dayNameUa}</h3>
+                        <div>${day.lessons.map(sl => {
+                            const tmp = data.templates.find(tm => tm.id === sl.templateId) || {name: '?', teacher: '?', extra: []};
+                            return `<div class="lesson-item" id="l-${sl.id}">
+                                <div class="remove-btn" onclick="removeLesson(${wIdx},${dIdx},${sl.id},event)">&times;</div>
+                                <b>${sl.start} - ${sl.end}</b><br>${tmp.name}<br>
+                                <span class="location-tag">${t('loc_label')} ${sl.location || '---'}</span><br>
+                                <small>${tmp.teacher}</small>
+                                <div class="utility-links">${tmp.extra.map(l => `<a href="${l}" target="_blank" onclick="event.stopPropagation()">Link</a>`).join('')}</div>
+                            </div>`;
+                        }).join('')}</div>
+                        <div class="input-group">
+                            <select class="t-select"><option value="">${t('sel_sub')}</option>${data.templates.map(tm => `<option value="${tm.id}">${tm.name}</option>`).join('')}</select>
+                            <div style="display:flex; gap:4px;"><input type="time" class="t-start"><input type="time" class="t-end"></div>
+                            <input type="text" class="t-location" placeholder="${t('location')}">
+                            <button onclick="addScheduledLesson(${wIdx},${dIdx},this)">${t('add_to_day')}</button>
+                        </div>
+                    </div>
+                `).join('')}</div>
+            </div>`;
+        }).join('');
+        checkAlerts();
+    }
+
+    setInterval(checkAlerts, 10000);
+    render();
+</script>
+</body>
+</html>
