@@ -43,6 +43,7 @@
         button {
             padding: 10px 15px; border: none; border-radius: 6px;
             cursor: pointer; background: var(--accent); color: #000; font-weight: bold;
+            display: inline-flex; align-items: center; gap: 5px;
         }
         button.secondary { background: var(--secondary); color: white; }
         button.danger { background: var(--danger); color: white; }
@@ -73,6 +74,9 @@
         .remove-btn { position: absolute; top: 5px; right: 8px; color: #888; cursor: pointer; }
         .input-group { display: flex; flex-direction: column; gap: 8px; margin-top: 15px; padding-top: 15px; border-top: 1px solid #444; }
         .location-tag { font-size: 0.85em; color: var(--accent); font-weight: bold; }
+        
+        /* Hidden file input */
+        #file-input { display: none; }
     </style>
 </head>
 <body>
@@ -91,7 +95,7 @@
             <input type="text" id="t-name" placeholder="Subject">
             <input type="text" id="t-teacher" placeholder="Teacher">
             <input type="url" id="t-main" placeholder="Main Link">
-            <input type="text" id="t-extra" placeholder="Extra Links (comma separated)">
+            <input type="text" id="t-extra" placeholder="Extra Links (comma)">
             <button onclick="addTemplate()" id="save-t-btn">Save Template</button>
         </div>
         <div id="template-list" style="display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap;"></div>
@@ -99,9 +103,13 @@
 
     <div class="controls">
         <button onclick="addWeek()" id="add-week-btn">+ Add Week</button>
-        <button class="secondary" onclick="exportData()" id="export-btn">📋 Export</button>
-        <div style="flex-grow: 1;">
-            <input type="text" id="import-box" placeholder="Paste data here..." style="width: 60%;">
+        <button class="secondary" onclick="exportData()" id="export-btn">📋 Export String</button>
+        <button class="secondary" onclick="exportToFile()" id="btn-save-file">💾 Save to File</button>
+        <button class="secondary" onclick="document.getElementById('file-input').click()" id="btn-load-file">📂 Load from File</button>
+        <input type="file" id="file-input" accept=".json" onchange="importFromFile(event)">
+        
+        <div style="flex-grow: 1; display: flex; gap: 5px;">
+            <input type="text" id="import-box" placeholder="Paste code here..." style="flex-grow: 1;">
             <button class="secondary" onclick="importData()" id="import-btn">📥 Import</button>
         </div>
     </div>
@@ -112,20 +120,20 @@
 <script>
     const i18n = {
         en: {
-            title: "🗓️ Lesson Schedule",
-            t_title: "🛠️ Lesson Templates",
+            title: "🗓️ Lesson Schedule", t_title: "🛠️ Lesson Templates",
             subject: "Subject", teacher: "Teacher", main_l: "Main Link", extra_l: "Extra Links (comma)",
-            save_t: "Save Template", add_w: "+ Add New Week", export: "Copy Export Code", import: "Import",
+            save_t: "Save Template", add_w: "+ Add New Week", export: "📋 Export String", import: "Import",
+            save_f: "💾 Save to File", load_f: "📂 Load from File",
             set_curr: "Set as Current", del_w: "Delete Week", add_to_day: "+ Add to Day",
             sel_sub: "-- Select Subject --", click_join: "CLICK TO JOIN", soon: "SOON:",
             location: "Location (e.g. Room 101)", loc_label: "Loc:",
             days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
         },
         ua: {
-            title: "🗓️ Розклад занять",
-            t_title: "🛠️ Шаблони занять",
+            title: "🗓️ Розклад занять", t_title: "🛠️ Шаблони занять",
             subject: "Предмет", teacher: "Викладач", main_l: "Основне посилання", extra_l: "Додаткові посилання (через кому)",
-            save_t: "Зберегти шаблон", add_w: "+ Додати тиждень", export: "Копіювати код", import: "Імпорт",
+            save_t: "Зберегти шаблон", add_w: "+ Додати тиждень", export: "📋 Експорт (Текст)", import: "Імпорт",
+            save_f: "💾 Зберегти у файл", load_f: "📂 Завантажити з файлу",
             set_curr: "Зробити поточним", del_w: "Видалити тиждень", add_to_day: "+ Додати в день",
             sel_sub: "-- Оберіть предмет --", click_join: "НАТИСНІТЬ, ЩОБ ПРИЄДНАТИСЯ", soon: "СКОРО:",
             location: "Місце (напр. Ауд. 101)", loc_label: "Місце:",
@@ -133,53 +141,97 @@
         }
     };
 
-    let data = JSON.parse(localStorage.getItem('lessonScheduleV6')) || {
-        templates: [],
-        weeks: [],
-        currentWeekIndex: 0,
-        cycleStartDate: Date.now(),
-        lang: 'en'
+    let data = JSON.parse(localStorage.getItem('lessonScheduleV8')) || {
+        templates: [], weeks: [], currentWeekIndex: 0, cycleStartDate: Date.now(), lang: 'en'
     };
 
+    // Mapping for condensed sharing
+    const map = {
+        templates: 't', weeks: 'w', currentWeekIndex: 'c', cycleStartDate: 's', lang: 'l',
+        id: 'i', name: 'n', teacher: 'tr', main: 'm', extra: 'e',
+        dayNameEn: 'de', dayNameUa: 'du', lessons: 'ls',
+        templateId: 'ti', start: 'st', end: 'en', location: 'lo'
+    };
+    const reverseMap = Object.fromEntries(Object.entries(map).map(([k, v]) => [v, k]));
+
+    function transform(obj, m) {
+        if (Array.isArray(obj)) return obj.map(v => transform(v, m));
+        if (obj !== null && typeof obj === 'object') {
+            return Object.fromEntries(Object.entries(obj).map(([k, v]) => [m[k] || k, transform(v, m)]));
+        }
+        return obj;
+    }
+
+    // --- File Handling ---
+    function exportToFile() {
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `lesson-schedule-${new Date().toISOString().slice(0,10)}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    function importFromFile(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const imported = JSON.parse(e.target.result);
+                if (imported.weeks) {
+                    data = imported;
+                    save();
+                }
+            } catch (err) { alert("Invalid JSON file."); }
+        };
+        reader.readAsText(file);
+    }
+
+    // --- Sharing Logic ---
+    function exportData() {
+        const packed = transform(data, map);
+        const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(packed))));
+        navigator.clipboard.writeText(encoded);
+        alert("Condensed code copied to clipboard!");
+    }
+
+    function importData() {
+        try {
+            const input = document.getElementById('import-box').value.trim();
+            let decoded;
+            if (input.startsWith('{')) {
+                decoded = JSON.parse(input);
+            } else {
+                decoded = JSON.parse(decodeURIComponent(escape(atob(input))));
+                decoded = transform(decoded, reverseMap);
+            }
+            if(decoded.weeks) { data = decoded; save(); document.getElementById('import-box').value = ""; }
+        } catch(e) { alert("Invalid code."); }
+    }
+
+    // --- Core UI Logic ---
     function t(key) { return i18n[data.lang][key]; }
+    function toggleLang() { data.lang = data.lang === 'en' ? 'ua' : 'en'; save(); }
+    function save() { localStorage.setItem('lessonScheduleV8', JSON.stringify(data)); render(); }
 
-    function toggleLang() {
-        data.lang = data.lang === 'en' ? 'ua' : 'en';
-        save();
-    }
-
-    function save() {
-        localStorage.setItem('lessonScheduleV6', JSON.stringify(data));
-        render();
-    }
-
-    // Rollover Logic
     function getAdjustedWeekIndex() {
         if (data.weeks.length === 0) return 0;
-        const msInWeek = 604800000;
-        const weeksElapsed = Math.floor((Date.now() - data.cycleStartDate) / msInWeek);
+        const weeksElapsed = Math.floor((Date.now() - data.cycleStartDate) / 604800000);
         return (data.currentWeekIndex + weeksElapsed) % data.weeks.length;
     }
 
-    function setWeekAsCurrent(idx) {
-        data.currentWeekIndex = idx;
-        data.cycleStartDate = Date.now();
-        save();
-    }
+    function setWeekAsCurrent(idx) { data.currentWeekIndex = idx; data.cycleStartDate = Date.now(); save(); }
 
     function addTemplate() {
-        const name = document.getElementById('t-name').value;
-        const teacher = document.getElementById('t-teacher').value;
-        const main = document.getElementById('t-main').value;
-        const extraRaw = document.getElementById('t-extra').value;
-        if(!name || !teacher) return;
-        const extra = extraRaw.split(',').map(s => s.trim()).filter(s => s !== "");
-        data.templates.push({ id: Date.now(), name, teacher, main, extra });
-        save();
-    }
-
-    function removeTemplate(id) {
-        data.templates = data.templates.filter(t => t.id !== id);
+        const n = document.getElementById('t-name').value;
+        const tr = document.getElementById('t-teacher').value;
+        const m = document.getElementById('t-main').value;
+        const eRaw = document.getElementById('t-extra').value;
+        if(!n || !tr) return;
+        const e = eRaw.split(',').map(s => s.trim()).filter(s => s !== "");
+        data.templates.push({ id: Date.now(), name: n, teacher: tr, main: m, extra: e });
         save();
     }
 
@@ -199,26 +251,17 @@
         save();
     }
 
-    function removeLesson(wIdx, dIdx, lId, e) {
-        e.stopPropagation();
-        data.weeks[wIdx][dIdx].lessons = data.weeks[wIdx][dIdx].lessons.filter(l => l.id !== lId);
-        save();
-    }
-
     function checkAlerts() {
         const now = new Date();
         const curMin = now.getHours() * 60 + now.getMinutes();
-        const alertBox = document.getElementById('alert-box');
         const activeIdx = getAdjustedWeekIndex();
         const week = data.weeks[activeIdx];
         if(!week) return;
-
         let dayIdx = now.getDay() - 1; if(dayIdx === -1) dayIdx = 6;
         const todaysLessons = week[dayIdx].lessons;
         let upcoming = null;
 
         document.querySelectorAll('.lesson-item').forEach(el => el.classList.remove('upcoming'));
-
         todaysLessons.forEach(sl => {
             const [h, m] = sl.start.split(':').map(Number);
             const diff = (h * 60 + m) - curMin;
@@ -234,21 +277,13 @@
                 }
             }
         });
-
+        const alertBox = document.getElementById('alert-box');
         if(upcoming) {
-            alertBox.innerHTML = `
-                <div style='font-size:0.7em'>${t('click_join')}</div>
-                <div>${t('soon')} ${upcoming.name}</div>
-                <div style='font-size:0.8em; font-weight:normal;'>${upcoming.start} | ${upcoming.location || '---'}</div>
-                <div style='font-size:0.8em; font-weight:normal;'>${upcoming.teacher}</div>
-            `;
+            alertBox.innerHTML = `<div style='font-size:0.7em'>${t('click_join')}</div><div>${t('soon')} ${upcoming.name}</div><div style='font-size:0.8em; font-weight:normal;'>${upcoming.start} | ${upcoming.location || '---'}</div>`;
             alertBox.style.display = 'block';
             if(upcoming.main) { alertBox.className = 'clickable'; alertBox.onclick = () => window.open(upcoming.main, '_blank'); }
         } else { alertBox.style.display = 'none'; }
     }
-
-    function exportData() { navigator.clipboard.writeText(JSON.stringify(data)); alert("Copied!"); }
-    function importData() { try { const imp = JSON.parse(document.getElementById('import-box').value); if(imp.weeks) { data = imp; save(); } } catch(e) {} }
 
     function render() {
         const lang = data.lang;
@@ -262,11 +297,13 @@
         document.getElementById('add-week-btn').innerText = t('add_w');
         document.getElementById('export-btn').innerText = t('export');
         document.getElementById('import-btn').innerText = t('import');
+        document.getElementById('btn-save-file').innerText = t('save_f');
+        document.getElementById('btn-load-file').innerText = t('load_f');
 
         document.getElementById('template-list').innerHTML = data.templates.map(tmp => `
             <div style="background:#252525; padding:8px 12px; border-radius:20px; border:1px solid #444; position:relative;">
                 <span style="font-size:0.9em"><b>${tmp.name}</b> (${tmp.teacher})</span>
-                <span class="remove-btn" style="position:static; margin-left:10px;" onclick="removeTemplate(${tmp.id})">&times;</span>
+                <span class="remove-btn" style="position:static; margin-left:10px;" onclick="data.templates = data.templates.filter(t => t.id !== ${tmp.id}); save();">&times;</span>
             </div>
         `).join('');
 
@@ -288,10 +325,9 @@
                         <div>${day.lessons.map(sl => {
                             const tmp = data.templates.find(tm => tm.id === sl.templateId) || {name: '?', teacher: '?', extra: []};
                             return `<div class="lesson-item" id="l-${sl.id}">
-                                <div class="remove-btn" onclick="removeLesson(${wIdx},${dIdx},${sl.id},event)">&times;</div>
+                                <div class="remove-btn" onclick="data.weeks[${wIdx}][${dIdx}].lessons = data.weeks[${wIdx}][${dIdx}].lessons.filter(l => l.id !== ${sl.id}); save(); event.stopPropagation();">&times;</div>
                                 <b>${sl.start} - ${sl.end}</b><br>${tmp.name}<br>
                                 <span class="location-tag">${t('loc_label')} ${sl.location || '---'}</span><br>
-                                <small>${tmp.teacher}</small>
                                 <div class="utility-links">${tmp.extra.map(l => `<a href="${l}" target="_blank" onclick="event.stopPropagation()">Link</a>`).join('')}</div>
                             </div>`;
                         }).join('')}</div>
