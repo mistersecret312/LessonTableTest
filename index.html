@@ -107,7 +107,7 @@
         <input type="file" id="file-input" accept=".json" onchange="importFromFile(event)">
         
         <div style="flex-grow: 1; display: flex; gap: 5px;">
-            <input type="text" id="import-box" placeholder="Paste code..." style="flex-grow: 1;">
+            <input type="text" id="import-box" placeholder="Paste export code..." style="flex-grow: 1;">
             <button class="secondary" onclick="importData()" id="import-btn">📥 Import</button>
         </div>
     </div>
@@ -118,7 +118,7 @@
 <script>
     const CONFIG = {
         DEFAULT_FILE: 'default_schedule.json',
-        STORAGE_KEY: 'lessonScheduleV9'
+        STORAGE_KEY: 'lessonScheduleV10'
     };
 
     const i18n = {
@@ -129,7 +129,7 @@
             save_f: "💾 Save to File", load_f: "📂 Load File", reset: "🔄 Reset to Default",
             set_curr: "Set as Current", del_w: "Delete Week", add_to_day: "+ Add to Day",
             sel_sub: "-- Select Subject --", click_join: "CLICK TO JOIN", soon: "SOON:",
-            location: "Location", loc_label: "Loc:", confirm_reset: "Wipe all current data and load default_schedule.json?",
+            location: "Location", loc_label: "Loc:", confirm_reset: "Wipe all current data and overwrite with 'default_schedule.json'?",
             days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
         },
         ua: {
@@ -139,7 +139,7 @@
             save_f: "💾 Зберегти", load_f: "📂 Завантажити", reset: "🔄 Скинути до початкових",
             set_curr: "Зробити поточним", del_w: "Видалити тиждень", add_to_day: "+ Додати в день",
             sel_sub: "-- Оберіть предмет --", click_join: "НАТИСНІТЬ, ЩОБ ПРИЄДНАТИСЯ", soon: "СКОРО:",
-            location: "Місце", loc_label: "Місце:", confirm_reset: "Видалити всі дані та завантажити default_schedule.json?",
+            location: "Місце", loc_label: "Місце:", confirm_reset: "Видалити всі дані та завантажити 'default_schedule.json'?",
             days: ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"]
         }
     };
@@ -165,11 +165,13 @@
     async function loadDefaultFromFile() {
         try {
             const response = await fetch(CONFIG.DEFAULT_FILE);
-            if (!response.ok) throw new Error("File not found");
+            if (!response.ok) throw new Error("Default file not found");
             const defaultData = await response.json();
             data = defaultData;
-            save();
+            save(); // Overwrites local storage
+            alert(data.lang === 'en' ? "Successfully reset to default!" : "Успішно скинуто до початкових!");
         } catch (err) {
+            console.warn("Could not find default_schedule.json. Initializing empty.");
             if (!data) {
                 data = { templates: [], weeks: [], currentWeekIndex: 0, cycleStartDate: Date.now(), lang: 'en' };
                 save();
@@ -179,17 +181,12 @@
 
     function resetToDefault() {
         if (confirm(t('confirm_reset'))) {
-            localStorage.removeItem(CONFIG.STORAGE_KEY);
             loadDefaultFromFile();
         }
     }
 
-    // Initialize
-    if (!data) {
-        loadDefaultFromFile();
-    }
+    if (!data) { loadDefaultFromFile(); }
 
-    // --- Core Logic ---
     function t(key) { return i18n[data.lang][key]; }
     function save() { localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(data)); render(); }
     function toggleLang() { data.lang = data.lang === 'en' ? 'ua' : 'en'; save(); }
@@ -278,10 +275,12 @@
     function render() {
         if (!data) return;
         const lang = data.lang;
-        ['title-main','t-manager-title','save-t-btn','add-week-btn','btn-save-file','btn-load-file','btn-reset','import-btn'].forEach(id => {
-            const key = id.replace('btn-','').replace('-btn','').replace('title-','').replace('-title','').replace('-t','_t').replace('save_t','save_t').replace('add_w','add_w');
-            const el = document.getElementById(id);
-            if (i18n[lang][key]) el.innerText = i18n[lang][key];
+        
+        // Dynamic Label Updating
+        const ids = ['title-main','t-manager-title','save-t-btn','add-week-btn','btn-save-file','btn-load-file','btn-reset','import-btn'];
+        ids.forEach(id => {
+            let key = id.replace('btn-','').replace('-btn','').replace('title-','').replace('-title','').replace('save-t','save_t').replace('add-week','add_w');
+            if (i18n[lang][key]) document.getElementById(id).innerText = i18n[lang][key];
         });
         
         document.getElementById('t-name').placeholder = t('subject');
@@ -305,7 +304,7 @@
                     <h2 style="margin:0">Week ${wIdx + 1} ${isActive ? '🟢' : ''}</h2>
                     <div>
                         <button class="secondary" onclick="data.currentWeekIndex=${wIdx}; data.cycleStartDate=Date.now(); save();">${t('set_curr')}</button>
-                        <button class="danger" onclick="data.weeks.splice(${wIdx},1); save();">&times;</button>
+                        <button class="danger" onclick="if(confirm('Delete week?')) { data.weeks.splice(${wIdx},1); save(); }">&times;</button>
                     </div>
                 </div>
                 <div class="days-grid">${week.map((day, dIdx) => `
